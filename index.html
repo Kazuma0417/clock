@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Accurate Clock</title>
+    <title>JST/UTC Clock & METAR (ROAH/RODN)</title>
     <style>
         /* --- 配色設定 --- */
         :root {
@@ -13,6 +13,8 @@
             --shadow-color: rgba(0,0,0,0.1);
             --jst-color: #1a73e8;
             --utc-color: #5f6368;
+            --metar-color: #333333;
+            --metar-bg: #ffffff;
             --label-color: #5f6368;
             --line-color: #dadce0;
         }
@@ -24,6 +26,8 @@
             --shadow-color: rgba(0,0,0,0.5);
             --jst-color: #8ab4f8;
             --utc-color: #e8eaed;
+            --metar-color: #e8eaed;
+            --metar-bg: #303134;
             --label-color: #9aa0a6;
             --line-color: #5f6368;
         }
@@ -33,14 +37,17 @@
             color: var(--text-color);
             font-family: 'Helvetica Neue', Arial, sans-serif;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
+            padding: 20px 0;
             transition: background-color 0.3s, color 0.3s;
         }
 
-        .clock-container {
+        /* 共通カードデザイン */
+        .card {
             text-align: center;
             background: var(--card-bg);
             padding: 40px;
@@ -48,6 +55,7 @@
             box-shadow: 0 4px 15px var(--shadow-color);
             transition: background-color 0.3s, box-shadow 0.3s;
             min-width: 350px;
+            margin: 10px 0;
         }
 
         .time-group { margin-bottom: 30px; }
@@ -75,6 +83,28 @@
             border: 0;
             border-top: 1px solid var(--line-color);
             margin: 30px 0;
+        }
+
+        /* --- METAR表示エリア --- */
+        .metar-card {
+            display: none;
+            max-width: 600px;
+            width: 90%;
+            text-align: left;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .metar-content {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.1rem;
+            line-height: 1.5;
+            color: var(--metar-color);
+            word-break: break-all;
         }
 
         /* スイッチのデザイン */
@@ -112,24 +142,35 @@
         <span class="switch-label">Dark Mode</span>
     </div>
 
-    <div class="clock-container">
+    <div class="card clock-container">
         <div class="time-group">
             <div class="label">JST (日本標準時)</div>
             <div id="jst-time" class="time">--/--/-- --:--:--</div>
         </div>
-
         <hr>
-
         <div class="time-group">
             <div class="label">UTC (協定世界時)</div>
             <div id="utc-time" class="time">--/--/-- --:--:--</div>
         </div>
     </div>
 
+    <div id="roah-card" class="card metar-card">
+        <div class="label">ROAH METAR (Naha)</div>
+        <hr style="margin: 15px 0;">
+        <div id="roah-text" class="metar-content">Loading...</div>
+    </div>
+
+    <div id="rodn-card" class="card metar-card">
+        <div class="label">RODN METAR (Kadena)</div>
+        <hr style="margin: 15px 0;">
+        <div id="rodn-text" class="metar-content">Loading...</div>
+    </div>
+
     <script>
         let timeOffset = 0; 
         let isSynced = false;
 
+        // --- 時計更新 ---
         function updateClock() {
             const now = new Date(Date.now() + timeOffset);
             const options = {
@@ -137,7 +178,6 @@
                 hour: '2-digit', minute: '2-digit', second: '2-digit',
                 hour12: false
             };
-
             const jstFormatter = new Intl.DateTimeFormat('ja-JP', { ...options, timeZone: 'Asia/Tokyo' });
             const utcFormatter = new Intl.DateTimeFormat('ja-JP', { ...options, timeZone: 'UTC' });
 
@@ -145,41 +185,89 @@
             document.getElementById('utc-time').textContent = utcFormatter.format(now);
         }
 
-        // 時刻同期処理（コンソールのみに出力）
+        // --- 時刻同期 ---
         async function syncTime() {
             try {
                 const requestStart = Date.now();
                 const response = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC');
                 if (!response.ok) throw new Error("Server Error");
-                
                 const data = await response.json();
-                const requestEnd = Date.now();
-                const latency = (requestEnd - requestStart) / 2;
-                
+                const latency = (Date.now() - requestStart) / 2;
                 const serverTime = new Date(data.dateTime + 'Z').getTime();
-                
                 timeOffset = serverTime - (Date.now() - latency);
                 isSynced = true;
-
-                // 画面には出さず、コンソールログに出力
-                console.log("● 同期成功: TimeAPI.io (高精度)", "補正値:", timeOffset, "ms");
-                
+                console.log("● 時刻同期成功");
             } catch (error) {
                 if (!isSynced) {
-                    // 画面には出さず、コンソールログに出力
-                    console.warn("⚠ 同期失敗 (ブラウザ制限またはオフライン): デバイス内部時計を使用中", error);
+                    console.warn("⚠ 時刻同期失敗: 内部時計使用");
                     timeOffset = 0;
                 }
             }
         }
 
+        // --- METAR取得関数 (VATSIMをメインに変更) ---
+        async function fetchSpecificMetar(icao, elementId) {
+            const metarBox = document.getElementById(elementId);
+            const cacheBuster = Date.now();
+            
+            // ★変更点: エラーが出やすいNOAAを廃止し、制限が緩いVATSIM一本にしました。
+            // VATSIMのデータはNOAAと連動しているので内容は同じです。
+            const url = `https://metar.vatsim.net/metar.php?id=${icao}&cb=${cacheBuster}`;
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("Fetch Error");
+                const metarData = await response.text();
+                
+                if (metarData.trim() === "") {
+                    metarBox.textContent = "No Data Available";
+                } else {
+                    metarBox.textContent = metarData;
+                    console.log(`METAR Updated (${icao}) - VATSIM Source`);
+                }
+            } catch (error) {
+                console.warn(`${icao} 取得失敗:`, error);
+                metarBox.textContent = "Load Error (Check Internet)";
+            }
+        }
+
+        // --- 表示切り替えロジック ---
+        function toggleBlock(cardId, icao, textId) {
+            const card = document.getElementById(cardId);
+            if (card.style.display === 'none' || card.style.display === '') {
+                card.style.display = 'block';
+                fetchSpecificMetar(icao, textId);
+            } else {
+                card.style.display = 'none';
+            }
+        }
+
+        // --- キーボードイベント ---
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'm' || event.key === 'M') {
+                toggleBlock('roah-card', 'ROAH', 'roah-text');
+            }
+            if (event.key === 'n' || event.key === 'N') {
+                toggleBlock('rodn-card', 'RODN', 'rodn-text');
+            }
+        });
+
+        // --- 初期化 & ループ ---
         updateClock();
         syncTime();
         
         setInterval(updateClock, 1000);
         setInterval(syncTime, 60000);
+        
+        setInterval(() => {
+            const roahCard = document.getElementById('roah-card');
+            if (roahCard.style.display === 'block') fetchSpecificMetar('ROAH', 'roah-text');
+            
+            const rodnCard = document.getElementById('rodn-card');
+            if (rodnCard.style.display === 'block') fetchSpecificMetar('RODN', 'rodn-text');
+        }, 60000);
 
-        // テーマ切り替え
+        // --- テーマ復元 ---
         const toggleSwitch = document.querySelector('.theme-switch input[type="checkbox"]');
         const currentTheme = localStorage.getItem('theme');
         if (currentTheme === 'dark') {
