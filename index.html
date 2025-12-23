@@ -3,114 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JST & UTC Clock</title>
+    <title>Accurate JST & UTC Clock</title>
     <style>
+        /* 色の定義（基本ライトモード） */
+        :root {
+            --bg-color: #f0f2f5;
+            --text-color: #202124;
+            --card-bg: #ffffff;
+            --shadow-color: rgba(0,0,0,0.1);
+            --jst-color: #1a73e8;
+            --utc-color: #5f6368;
+            --label-color: #5f6368;
+            --line-color: #dadce0;
+            --status-ok: #188038; /* 緑 */
+            --status-warn: #d93025; /* 赤 */
+        }
+
+        /* ダークモード設定 */
+        body.dark-mode {
+            --bg-color: #202124;
+            --text-color: #ffffff;
+            --card-bg: #303134;
+            --shadow-color: rgba(0,0,0,0.5);
+            --jst-color: #8ab4f8;
+            --utc-color: #e8eaed;
+            --label-color: #9aa0a6;
+            --line-color: #5f6368;
+            --status-ok: #81c995;
+            --status-warn: #f28b82;
+        }
+
         body {
-            background-color: #202124; /* 背景色：ダークグレー */
-            color: #ffffff; /* 文字色：白 */
+            background-color: var(--bg-color);
+            color: var(--text-color);
             font-family: 'Helvetica Neue', Arial, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh; /* 画面いっぱいの高さ */
+            height: 100vh;
             margin: 0;
+            transition: background-color 0.3s, color 0.3s;
         }
 
         .clock-container {
             text-align: center;
-            background: #303134;
+            background: var(--card-bg);
             padding: 40px;
             border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 15px var(--shadow-color);
+            transition: background-color 0.3s, box-shadow 0.3s;
+            min-width: 350px;
         }
 
-        .time-group {
-            margin-bottom: 30px;
-        }
-        
-        /* 最後の要素のマージンを消す */
-        .time-group:last-child {
-            margin-bottom: 0;
-        }
+        .time-group { margin-bottom: 30px; }
+        .time-group:last-child { margin-bottom: 0; }
 
         .label {
             font-size: 1rem;
-            color: #9aa0a6; /* ラベルは少し薄く */
+            color: var(--label-color);
             margin-bottom: 5px;
             font-weight: bold;
             letter-spacing: 1px;
         }
 
         .time {
-            font-family: 'Courier New', Courier, monospace; /* 数字が等幅になるフォント */
+            font-family: 'Courier New', Courier, monospace;
             font-weight: bold;
-        }
-
-        /* JST用のスタイル（大きく強調） */
-        #jst-time {
             font-size: 3rem;
-            color: #8ab4f8; /* 薄い青 */
+            line-height: 1.2;
         }
 
-        /* UTC用のスタイル（少し小さく） */
-        #utc-time {
-            font-size: 1.8rem;
-            color: #e8eaed;
+        #jst-time { color: var(--jst-color); }
+        #utc-time { color: var(--utc-color); }
+
+        hr {
+            border: 0;
+            border-top: 1px solid var(--line-color);
+            margin: 30px 0;
+        }
+
+        /* 同期ステータス表示 */
+        .sync-status {
+            margin-top: 20px;
+            font-size: 0.8rem;
+            color: var(--label-color);
+        }
+        #sync-msg {
+            font-weight: bold;
+            margin-left: 5px;
+        }
+
+        /* スイッチのデザイン */
+        .theme-switch-wrapper {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+        }
+        .theme-switch {
+            display: inline-block;
+            height: 34px;
+            position: relative;
+            width: 60px;
+        }
+        .theme-switch input { display: none; }
+        .slider {
+            background-color: #ccc;
+            bottom: 0;
+            cursor: pointer;
+            left: 0;
+            position: absolute;
+            right: 0;
+            top: 0;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            background-color: #fff;
+            bottom: 4px;
+            content: "";
+            height: 26px;
+            left: 4px;
+            position: absolute;
+            transition: .4s;
+            width: 26px;
+            border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #8ab4f8; }
+        input:checked + .slider:before { transform: translateX(26px); }
+        .switch-label {
+            margin-left: 10px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: var(--text-color);
         }
     </style>
 </head>
 <body>
 
+    <div class="theme-switch-wrapper">
+        <label class="theme-switch" for="checkbox">
+            <input type="checkbox" id="checkbox" />
+            <div class="slider"></div>
+        </label>
+        <span class="switch-label">Dark Mode</span>
+    </div>
+
     <div class="clock-container">
         <div class="time-group">
             <div class="label">JST (日本標準時)</div>
-            <div id="jst-time" class="time">--:--:--</div>
+            <div id="jst-time" class="time">--/--/-- --:--:--</div>
         </div>
 
-        <hr style="border: 0; border-top: 1px solid #5f6368; margin: 20px 0;">
+        <hr>
 
         <div class="time-group">
             <div class="label">UTC (協定世界時)</div>
-            <div id="utc-time" class="time">--:--:--</div>
+            <div id="utc-time" class="time">--/--/-- --:--:--</div>
+        </div>
+        
+        <div class="sync-status">
+            時刻ソース: <span id="sync-source">内部時計</span>
+            <span id="sync-msg"></span>
         </div>
     </div>
 
     <script>
-        function updateClock() {
-            const now = new Date();
+        let timeOffset = 0; // サーバーとの時間のズレ（ミリ秒）
+        let isSynced = false;
 
-            // オプション設定：24時間表記、秒まで表示
+        // 時計更新処理
+        function updateClock() {
+            // 現在の時刻にズレ（offset）を加算して補正
+            const now = new Date(Date.now() + timeOffset);
+
             const options = {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
                 hour12: false
             };
+            
+            // JSTとUTCのフォーマッター
+            const jstFormatter = new Intl.DateTimeFormat('ja-JP', { ...options, timeZone: 'Asia/Tokyo' });
+            const utcFormatter = new Intl.DateTimeFormat('ja-JP', { ...options, timeZone: 'UTC' });
 
-            // JST (Asia/Tokyo) のフォーマット
-            const jstFormatter = new Intl.DateTimeFormat('ja-JP', {
-                ...options,
-                timeZone: 'Asia/Tokyo'
-            });
-
-            // UTC (UTC) のフォーマット
-            const utcFormatter = new Intl.DateTimeFormat('en-GB', {
-                ...options,
-                timeZone: 'UTC'
-            });
-
-            // HTMLに反映 (日付と時刻の間の余計な文字などを整える)
-            document.getElementById('jst-time').textContent = jstFormatter.format(now).replace(/\//g, '-');
-            document.getElementById('utc-time').textContent = utcFormatter.format(now).replace(/\//g, '-');
+            document.getElementById('jst-time').textContent = jstFormatter.format(now);
+            document.getElementById('utc-time').textContent = utcFormatter.format(now);
         }
 
-        // 初回実行
+        // 外部サーバー(WorldTimeAPI)と同期してズレを計算する関数
+        async function syncTime() {
+            const statusMsg = document.getElementById('sync-msg');
+            const sourceMsg = document.getElementById('sync-source');
+            
+            try {
+                // 通信開始時刻
+                const requestStart = Date.now();
+                
+                // UTC時間を取得 (WorldTimeAPIを使用)
+                const response = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC');
+                const data = await response.json();
+                
+                // 通信終了時刻
+                const requestEnd = Date.now();
+                
+                // 通信にかかった時間の半分を遅延として考慮
+                const latency = (requestEnd - requestStart) / 2;
+                
+                // サーバーの時刻オブジェクトを作成
+                const serverTime = new Date(data.datetime).getTime();
+                
+                // ズレを計算 (サーバー時刻 - (現在時刻 + 通信遅延))
+                // ※これで「PCの時計が進んでいても遅れていても」正しい時間になります
+                timeOffset = serverTime - (Date.now() - latency);
+                
+                isSynced = true;
+                sourceMsg.textContent = "インターネット時刻 (WorldTimeAPI)";
+                statusMsg.textContent = "● 同期完了";
+                statusMsg.style.color = "var(--status-ok)";
+                
+            } catch (error) {
+                console.error("時刻同期に失敗しました:", error);
+                // 失敗した場合は内部時計を使う（オフセットはそのままか0）
+                if (!isSynced) {
+                    sourceMsg.textContent = "デバイス内部時計";
+                    statusMsg.textContent = "⚠ 同期失敗 (オフライン)";
+                    statusMsg.style.color = "var(--status-warn)";
+                }
+            }
+        }
+
+        // 初回起動
         updateClock();
-        // 1秒ごとに更新
+        syncTime(); // すぐに同期を試みる
+        
+        // 1秒ごとに時計を更新
         setInterval(updateClock, 1000);
+        
+        // 60秒ごとに時刻同期を再実行（ズレを修正し続ける）
+        setInterval(syncTime, 60000);
+
+        // --- テーマ切り替えロジック (前回と同じ) ---
+        const toggleSwitch = document.querySelector('.theme-switch input[type="checkbox"]');
+        const currentTheme = localStorage.getItem('theme');
+
+        if (currentTheme === 'dark') {
+            document.body.classList.add('dark-mode');
+            toggleSwitch.checked = true;
+        }
+
+        toggleSwitch.addEventListener('change', function(e) {
+            if (e.target.checked) {
+                document.body.classList.add('dark-mode');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                document.body.classList.remove('dark-mode');
+                localStorage.setItem('theme', 'light');
+            }
+        }, false);
     </script>
 
 </body>
