@@ -200,29 +200,22 @@
             document.getElementById('utc-time').textContent = utcFormatter.format(now);
         }
 
-        // --- 時刻同期 (WorldTimeAPI に変更) ---
+        // --- 時刻同期 ---
         async function syncTime() {
             try {
                 const requestStart = Date.now();
-                // ★ 変更点：安定している WorldTimeAPI に変更しました
-                const response = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC');
-                
+                const response = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC');
                 if (!response.ok) throw new Error("Server Error");
-                
                 const data = await response.json();
                 const latency = (Date.now() - requestStart) / 2;
-                
-                // WorldTimeAPIの形式に合わせてパース
-                const serverTime = new Date(data.datetime).getTime();
-                
+                const serverTime = new Date(data.dateTime + 'Z').getTime();
                 timeOffset = serverTime - (Date.now() - latency);
                 isSynced = true;
-                console.log("● 時刻同期成功 (WorldTimeAPI)");
-                updateClock();
+                console.log("● 時刻同期成功");
+                updateClock(); // 同期直後に画面も更新
             } catch (error) {
-                // 失敗してもエラーを出さず、静かに内部時計を使う
                 if (!isSynced) {
-                    console.log("⚠ 時刻サーバー接続不可: 内部時計を使用します");
+                    console.warn("⚠ 時刻同期失敗: 内部時計使用");
                     timeOffset = 0;
                 }
             }
@@ -261,11 +254,12 @@
             }
         }
 
-        // --- 画面復帰時の自動修正 ---
+        // --- ★追加機能: 画面復帰時の自動修正 ---
         document.addEventListener("visibilitychange", function() {
             if (document.visibilityState === 'visible') {
-                updateClock();
-                syncTime();
+                console.log("画面復帰: 時刻を強制修正します");
+                updateClock(); // まず見た目を更新
+                syncTime();    // サーバー時刻を再取得
             }
         });
 
