@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JST/UTC Clock & METAR (ROAH/RODN)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>JST/UTC Clock & METAR</title>
     <style>
         /* --- 配色設定 --- */
         :root {
@@ -44,6 +44,7 @@
             margin: 0;
             padding: 20px 0;
             transition: background-color 0.3s, color 0.3s;
+            -webkit-tap-highlight-color: transparent;
         }
 
         /* 共通カードデザイン */
@@ -107,11 +108,12 @@
             word-break: break-all;
         }
 
-        /* スイッチのデザイン */
+        /* スイッチのデザイン (右上) */
         .theme-switch-wrapper {
             position: absolute;
             top: 20px; right: 20px;
             display: flex; align-items: center;
+            z-index: 100;
         }
         .theme-switch {
             display: inline-block; height: 34px; position: relative; width: 60px;
@@ -130,9 +132,22 @@
         .switch-label {
             margin-left: 10px; font-size: 0.9rem; font-weight: bold; color: var(--text-color);
         }
+
+        /* --- スマホ用・秘密のタップエリア (左上) --- */
+        #secret-tap-area {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 80px; 
+            height: 80px;
+            z-index: 9999; 
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
+
+    <div id="secret-tap-area"></div>
 
     <div class="theme-switch-wrapper">
         <label class="theme-switch" for="checkbox">
@@ -197,6 +212,7 @@
                 timeOffset = serverTime - (Date.now() - latency);
                 isSynced = true;
                 console.log("● 時刻同期成功");
+                updateClock(); // 同期直後に画面も更新
             } catch (error) {
                 if (!isSynced) {
                     console.warn("⚠ 時刻同期失敗: 内部時計使用");
@@ -205,29 +221,25 @@
             }
         }
 
-        // --- METAR取得関数 (VATSIMをメインに変更) ---
+        // --- METAR取得 (VATSIM) ---
         async function fetchSpecificMetar(icao, elementId) {
             const metarBox = document.getElementById(elementId);
             const cacheBuster = Date.now();
-            
-            // ★変更点: エラーが出やすいNOAAを廃止し、制限が緩いVATSIM一本にしました。
-            // VATSIMのデータはNOAAと連動しているので内容は同じです。
             const url = `https://metar.vatsim.net/metar.php?id=${icao}&cb=${cacheBuster}`;
 
             try {
                 const response = await fetch(url);
                 if (!response.ok) throw new Error("Fetch Error");
                 const metarData = await response.text();
-                
                 if (metarData.trim() === "") {
                     metarBox.textContent = "No Data Available";
                 } else {
                     metarBox.textContent = metarData;
-                    console.log(`METAR Updated (${icao}) - VATSIM Source`);
+                    console.log(`METAR Updated (${icao})`);
                 }
             } catch (error) {
                 console.warn(`${icao} 取得失敗:`, error);
-                metarBox.textContent = "Load Error (Check Internet)";
+                metarBox.textContent = "Load Error";
             }
         }
 
@@ -242,14 +254,35 @@
             }
         }
 
-        // --- キーボードイベント ---
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'm' || event.key === 'M') {
+        // --- ★追加機能: 画面復帰時の自動修正 ---
+        document.addEventListener("visibilitychange", function() {
+            if (document.visibilityState === 'visible') {
+                console.log("画面復帰: 時刻を強制修正します");
+                updateClock(); // まず見た目を更新
+                syncTime();    // サーバー時刻を再取得
+            }
+        });
+
+        // --- スマホ用 5回タップ機能 ---
+        let tapCount = 0;
+        let tapTimer;
+        const secretArea = document.getElementById('secret-tap-area');
+
+        secretArea.addEventListener('click', (e) => {
+            tapCount++;
+            clearTimeout(tapTimer);
+            if (tapCount === 5) {
                 toggleBlock('roah-card', 'ROAH', 'roah-text');
+                tapCount = 0; 
+            } else {
+                tapTimer = setTimeout(() => { tapCount = 0; }, 400); 
             }
-            if (event.key === 'n' || event.key === 'N') {
-                toggleBlock('rodn-card', 'RODN', 'rodn-text');
-            }
+        });
+
+        // --- PC用 キーボード操作 ---
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'm' || event.key === 'M') toggleBlock('roah-card', 'ROAH', 'roah-text');
+            if (event.key === 'n' || event.key === 'N') toggleBlock('rodn-card', 'RODN', 'rodn-text');
         });
 
         // --- 初期化 & ループ ---
@@ -262,7 +295,6 @@
         setInterval(() => {
             const roahCard = document.getElementById('roah-card');
             if (roahCard.style.display === 'block') fetchSpecificMetar('ROAH', 'roah-text');
-            
             const rodnCard = document.getElementById('rodn-card');
             if (rodnCard.style.display === 'block') fetchSpecificMetar('RODN', 'rodn-text');
         }, 60000);
