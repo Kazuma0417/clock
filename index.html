@@ -17,8 +17,6 @@
             --metar-bg: #ffffff;
             --label-color: #5f6368;
             --line-color: #dadce0;
-            --status-ok: #188038;
-            --status-warn: #d93025;
         }
 
         body.dark-mode {
@@ -32,8 +30,6 @@
             --metar-bg: #303134;
             --label-color: #9aa0a6;
             --line-color: #5f6368;
-            --status-ok: #81c995;
-            --status-warn: #f28b82;
         }
 
         body {
@@ -88,14 +84,6 @@
             border: 0;
             border-top: 1px solid var(--line-color);
             margin: 30px 0;
-        }
-
-        /* ステータス表示（デバッグ用・安心用） */
-        .status-bar {
-            margin-top: 10px;
-            font-size: 0.8rem;
-            color: var(--label-color);
-            min-height: 1.2em;
         }
 
         /* --- METAR表示エリア --- */
@@ -179,7 +167,6 @@
             <div class="label">UTC (協定世界時)</div>
             <div id="utc-time" class="time">--/--/-- --:--:--</div>
         </div>
-        <div class="status-bar" id="sync-status">Connecting...</div>
     </div>
 
     <div id="roah-card" class="card metar-card">
@@ -200,7 +187,6 @@
 
         // --- 時計更新 ---
         function updateClock() {
-            // 現在時刻 + ネットとのズレ = 正確な時刻
             const now = new Date(Date.now() + timeOffset);
             const options = {
                 year: 'numeric', month: '2-digit', day: '2-digit',
@@ -214,11 +200,9 @@
             document.getElementById('utc-time').textContent = utcFormatter.format(now);
         }
 
-        // --- 堅牢な時刻同期システム ---
+        // --- 堅牢な時刻同期システム (表示なし版) ---
         async function syncTime() {
-            const statusEl = document.getElementById('sync-status');
-            
-            // 試行するサーバーのリスト (優先順位順)
+            // 試行するサーバーリスト
             const sources = [
                 { name: "Adafruit IO", url: "https://io.adafruit.com/api/v2/time/seconds", type: "text" },
                 { name: "WorldTimeAPI", url: "https://worldtimeapi.org/api/timezone/Etc/UTC", type: "json" },
@@ -228,7 +212,6 @@
             for (const source of sources) {
                 try {
                     const requestStart = Date.now();
-                    // タイムアウトを3秒に設定（遅いサーバーはすぐ諦めて次へ）
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), 3000);
                     
@@ -238,17 +221,13 @@
                     if (!response.ok) throw new Error("Status " + response.status);
 
                     let serverTime = 0;
-                    
                     if (source.type === "text") {
-                        // Adafruitは秒単位のテキストを返す
                         const text = await response.text();
                         serverTime = parseInt(text, 10) * 1000;
                     } else if (source.type === "json") {
-                        // WorldTimeAPI
                         const data = await response.json();
                         serverTime = new Date(data.datetime).getTime();
                     } else if (source.type === "json_timeapi") {
-                        // TimeAPI.io
                         const data = await response.json();
                         serverTime = new Date(data.dateTime + 'Z').getTime();
                     }
@@ -256,28 +235,22 @@
                     const requestEnd = Date.now();
                     const latency = (requestEnd - requestStart) / 2;
                     
-                    // ズレを計算して保存
                     timeOffset = serverTime - (Date.now() - latency);
                     isSynced = true;
-
-                    // 成功したら表示してループを抜ける
-                    statusEl.textContent = `● Synced via ${source.name}`;
-                    statusEl.style.color = "var(--status-ok)";
+                    
+                    // 画面表示は消しましたが、念のためコンソールログには残します
                     console.log(`Synced with ${source.name}, Offset: ${timeOffset}ms`);
                     updateClock();
-                    return; // 成功したので終了
+                    return; 
 
                 } catch (e) {
-                    console.warn(`Failed: ${source.name}`, e);
-                    // 次のサーバーへ
+                    console.warn(`Sync Failed: ${source.name}`);
                 }
             }
 
-            // 全部失敗した場合
             if (!isSynced) {
-                statusEl.textContent = "⚠ Net Sync Failed (Using Local Time)";
-                statusEl.style.color = "var(--status-warn)";
-                timeOffset = 0; // 内部時計に戻す
+                console.warn("All sync sources failed. Using local time.");
+                timeOffset = 0;
             }
         }
 
@@ -313,8 +286,6 @@
         }
 
         // --- イベントリスナー ---
-        
-        // 画面復帰時に再同期
         document.addEventListener("visibilitychange", function() {
             if (document.visibilityState === 'visible') {
                 updateClock();
@@ -322,11 +293,10 @@
             }
         });
 
-        // スマホ用 5回タップ (左上)
+        // スマホ用 5回タップ
         let tapCount = 0;
         let tapTimer;
         const secretArea = document.getElementById('secret-tap-area');
-
         secretArea.addEventListener('click', (e) => {
             tapCount++;
             clearTimeout(tapTimer);
@@ -338,7 +308,7 @@
             }
         });
 
-        // PC用 キーボード (M/N)
+        // PC用 キーボード
         document.addEventListener('keydown', function(event) {
             if (event.key === 'm' || event.key === 'M') toggleBlock('roah-card', 'ROAH', 'roah-text');
             if (event.key === 'n' || event.key === 'N') toggleBlock('rodn-card', 'RODN', 'rodn-text');
@@ -363,10 +333,10 @@
 
         // --- 開始処理 ---
         updateClock();
-        syncTime(); // ネット同期開始
+        syncTime();
         
         setInterval(updateClock, 1000);
-        setInterval(syncTime, 60000); // 1分ごとに再同期
+        setInterval(syncTime, 60000);
         
         setInterval(() => {
             const roahCard = document.getElementById('roah-card');
