@@ -60,7 +60,20 @@
         }
 
         .time-group { margin-bottom: 30px; }
+        /* UTCが消えた時に余白を調整するためのクラス */
+        .time-group.last-visible { margin-bottom: 0; }
         .time-group:last-child { margin-bottom: 0; }
+
+        /* JSTエリアをクリック可能にする */
+        #jst-group {
+            cursor: pointer;
+            user-select: none; /* 連打でテキスト選択されるのを防ぐ */
+            border-radius: 10px;
+            transition: opacity 0.2s;
+        }
+        #jst-group:active {
+            opacity: 0.7;
+        }
 
         .label {
             font-size: 1rem;
@@ -84,6 +97,12 @@
             border: 0;
             border-top: 1px solid var(--line-color);
             margin: 30px 0;
+            transition: opacity 0.3s;
+        }
+
+        /* 非表示用クラス */
+        .hidden {
+            display: none !important;
         }
 
         /* --- METAR表示エリア --- */
@@ -158,12 +177,14 @@
     </div>
 
     <div class="card clock-container">
-        <div class="time-group">
+        <div id="jst-group" class="time-group">
             <div class="label">JST (日本標準時)</div>
             <div id="jst-time" class="time">--/--/-- --:--:--</div>
         </div>
-        <hr>
-        <div class="time-group">
+        
+        <hr id="clock-divider">
+        
+        <div id="utc-group" class="time-group">
             <div class="label">UTC (協定世界時)</div>
             <div id="utc-time" class="time">--/--/-- --:--:--</div>
         </div>
@@ -194,15 +215,17 @@
                 hour12: false
             };
             const jstFormatter = new Intl.DateTimeFormat('ja-JP', { ...options, timeZone: 'Asia/Tokyo' });
-            const utcFormatter = new Intl.DateTimeFormat('ja-JP', { ...options, timeZone: 'UTC' });
-
+            
+            // UTCが表示されている場合のみ更新処理を行う
+            if (!document.getElementById('utc-group').classList.contains('hidden')) {
+                const utcFormatter = new Intl.DateTimeFormat('ja-JP', { ...options, timeZone: 'UTC' });
+                document.getElementById('utc-time').textContent = utcFormatter.format(now);
+            }
             document.getElementById('jst-time').textContent = jstFormatter.format(now);
-            document.getElementById('utc-time').textContent = utcFormatter.format(now);
         }
 
-        // --- 堅牢な時刻同期システム (表示なし版) ---
+        // --- 堅牢な時刻同期システム ---
         async function syncTime() {
-            // 試行するサーバーリスト
             const sources = [
                 { name: "Adafruit IO", url: "https://io.adafruit.com/api/v2/time/seconds", type: "text" },
                 { name: "WorldTimeAPI", url: "https://worldtimeapi.org/api/timezone/Etc/UTC", type: "json" },
@@ -238,7 +261,6 @@
                     timeOffset = serverTime - (Date.now() - latency);
                     isSynced = true;
                     
-                    // 画面表示は消しましたが、念のためコンソールログには残します
                     console.log(`Synced with ${source.name}, Offset: ${timeOffset}ms`);
                     updateClock();
                     return; 
@@ -284,6 +306,41 @@
                 card.style.display = 'none';
             }
         }
+
+        // --- UTC表示切替機能 ---
+        const jstGroup = document.getElementById('jst-group');
+        const utcGroup = document.getElementById('utc-group');
+        const clockDivider = document.getElementById('clock-divider');
+
+        function setUtcVisibility(isVisible) {
+            if (isVisible) {
+                utcGroup.classList.remove('hidden');
+                clockDivider.classList.remove('hidden');
+                jstGroup.classList.remove('last-visible');
+                localStorage.setItem('utcVisible', 'true');
+                updateClock(); // 表示した瞬間に更新
+            } else {
+                utcGroup.classList.add('hidden');
+                clockDivider.classList.add('hidden');
+                jstGroup.classList.add('last-visible');
+                localStorage.setItem('utcVisible', 'false');
+            }
+        }
+
+        // 初期ロード時の設定復元
+        const savedUtcState = localStorage.getItem('utcVisible');
+        if (savedUtcState === 'false') {
+            setUtcVisibility(false);
+        } else {
+            setUtcVisibility(true); // デフォルトは表示
+        }
+
+        // クリックイベント (修正済み)
+        jstGroup.addEventListener('click', () => {
+            const isCurrentlyHidden = utcGroup.classList.contains('hidden');
+            setUtcVisibility(isCurrentlyHidden); // 隠れてたら表示、表示されてたら隠す
+        });
+
 
         // --- イベントリスナー ---
         document.addEventListener("visibilitychange", function() {
